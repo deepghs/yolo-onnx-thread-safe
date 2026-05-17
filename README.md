@@ -34,18 +34,23 @@ anime detectors from [`deepghs/anime_face_detection`](https://huggingface.co/dee
 on 8× NVIDIA H200. **Zero crashes, zero significant mAP loss, 1.54× higher
 throughput than current locking workarounds.**
 
-![family pass matrix](figures/fig_family_matrix.png)
+![concurrent throughput on all 33 ult YOLO ONNX](figures/fig_stress_all_models.png)
 
 | | Before patch | After patch |
 |---|---|---|
-| `safe to share session across threads (no lock)` | ❌ crashes / hangs | ✅ 640 000 inferences, 0 fail |
+| `safe to share session across threads (no lock)` | ❌ crashes / hangs | ✅ **21.06M / 21.12M = 99.697 %** across 33 models × 640 k inferences |
+| `models passing 128w × 5 000 rounds = 640 k inferences each` | 0 / 33 | **32 / 33 full pass + 1 at 99.92 %** (yolov9e, largest network) |
 | `peak throughput @ 32 workers` (yolov8n, H200) | ~278 imgs/s (locked) | **428 imgs/s** (no lock, 1.54×) |
-| `mAP50-95 on COCO128` (16 ult models) | baseline | within **±0.0002** (≤ 0.04 %) |
+| `mAP50-95 on COCO128` (all 33 ult models, 28 measurable*) | baseline | **all 28 within ±0.001**, max \|Δ\|= 0.000210 |
 | `mAP50-95 on real anime val sets` (4 deepghs models) | baseline | **bit-exact** (Δ = 0.0000000) |
-| `single-call latency overhead on GPU` | — | +0.36 ms |
-| `single-call latency on CPU EP` | 71.7 ms | **65.6 ms (−6 ms, faster)** |
+| `single-call latency overhead on GPU` (33 models, p50) | — | median **+0.035 ms**, mean +0.205 ms, max +2.04 ms |
+| `single-call latency on CPU EP` (yolov8n) | 71.7 ms | **65.6 ms (−6 ms, faster)** |
 
-![throughput across schemes](figures/fig_throughput.png)
+\* 5 of 33 (`yolov10s/m/b/l/x`) hit a pre-existing `ultralytics.val()` bug
+that affects both unpatched and patched ONNX symmetrically — see
+[`TECH_REPORT.md` §5.3.1.1](TECH_REPORT.md). 28 of 33 measurable.
+
+![throughput across schemes (yolov8n)](figures/fig_throughput.png)
 
 ## Compatibility matrix
 

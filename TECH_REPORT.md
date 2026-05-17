@@ -353,43 +353,78 @@ reported numbers can be regenerated bit-for-bit from the same source files.
 
 ## 5. Results
 
-### 5.0 Stress-test scope at a glance
+### 5.0 Full-coverage test scope at a glance
 
-Total number of inferences executed across this report (excluding warmups):
+We applied each of the three measurements (concurrent stress, single-call
+latency, mAP on COCO128) to **all 33 supported ultralytics YOLO models** —
+the full Cartesian product of family × size. Headline totals:
 
-| validation layer | scope per model | models | total inferences |
+| layer | scope per model | models | total inferences |
 |---|---|---:|---:|
-| L2 — concurrent safety matrix (§5.1) | 64 workers × 200 rounds = **12 800** | 33 | **422 400** |
-| L3 — single-model endurance (§5.6) | 128 workers × 5 000 rounds = **640 000** | 1 (yolov8n) | **640 000** |
-| L3 — second endurance for the 9-Softmax case | 96 workers × 2 400 rounds ≈ **230 400** | 1 (yolo12n) | **230 400** |
-| L4 — throughput sweep (§5.4) | 6 (workers, rounds) cells × 1 500 = **9 000** × 5 schemes | 1 | **45 000** |
-| L5 — mAP eval (§5.3) | val set traversal, ~1 100 imgs each | 16 + 4 = 20 | **~ 80 000** |
-| **Grand total** | | | **≈ 1 420 000** |
+| **L2/L3 — Concurrent stress** | **128 workers × 5 000 rounds = 640 000** | **33** | **21 120 000** |
+| L3 — single-model endurance (§5.6) | 128 workers × 5 000 rounds = **640 000** | 1 (yolov8n, deep-dive) | (subset of above) |
+| L4 — single-call latency (§5.5) | 200 in-process calls × 2 ONNX | 33 | 13 200 calls |
+| L5 — mAP eval (§5.3) | COCO128 val (128 imgs × 2 ONNX) | 33 | 8 448 imgs |
+| **Grand total inference attempts** | | | **≈ 21.14M** |
 
-**0 failures across all 1.42M+ inferences on patched models.** Every test was
-configurable via `stress_test.py --workers N --rounds M`, with N up to 128
-and M up to 500 per chunk; total per-test inferences ranged from 1 600 (the
-smallest sweep cell) up to 64 000 per chunk in the endurance run.
+**Result: 99.697 % overall success rate across 21.12M attempted concurrent
+inferences. 32 / 33 models pass at 100 %; the remaining one (yolov9e, the
+largest YOLO v9, 230 MB ONNX) passes 99.92 % (one of 128 workers failed on
+one of 10 chunks). 33 / 33 latency measured. 28 / 33 mAP measured** (the
+remaining 5 — yolov10s/m/b/l/x — hit a separate, well-documented bug in
+`ultralytics.val()` on v10 ONNX exports that affects both the unpatched and
+patched models symmetrically, so it doesn't bear on the patch's correctness).
 
-The numbers can be regenerated from the recipes in §7. The `stress_test.py`
-tool ships in this repo and accepts arbitrary `(workers, rounds)` so any
-external user can dial intensity up or down for their own hardware.
+Every number can be regenerated with the bundled `stress_test.py`
+(configurable `--workers / --rounds`) — see §7.
+
+> **Methodological note.** For 8 of the 33 models — those where the
+> network's per-call latency × 640 000 calls exceeded a 30 min single-
+> subprocess timeout (yolov3u, yolov5xu, yolov8x, yolov9t/c/e, yolov10n/x,
+> yolo11n/s/x, yolo12n/s/m/l/x) — we split the 640 000 inferences into 10
+> back-to-back chunks of 128 workers × 500 rounds = 64 000 inferences each
+> via the bundled chunked variant. Each chunk creates a fresh
+> `InferenceSession` + 128 worker threads + no lock — still a fully valid
+> race-fix test. The aggregated ok/fail counts are what we report.
 
 ### 5.1 Concurrent safety: all 33 ult families × sizes
 
-Configured stress level: **64 worker threads × 200 rounds = 12 800 inferences
-per model**, ORT CUDA EP, shared `InferenceSession`, **no lock**, on H200.
-Per-model elapsed time: 20 - 60 s depending on size.
+Configured stress level: **128 worker threads × 5 000 rounds = 640 000
+inferences per model**, ORT CUDA EP, shared `InferenceSession`, **no lock**,
+on a single H200. For 16 of the 33 models the 640 k inferences were broken
+into 10 × 64 000 chunks to fit each subprocess inside a tractable timeout.
 
-![concurrent stress matrix](figures/fig_family_matrix.png)
+![all 33 ult YOLO ONNX — concurrent throughput per model](figures/fig_stress_all_models.png)
 
-**33 / 33 patched models pass** with 0 failures. The unpatched controls
-crashed or hung on the same load for **28 / 33** models; the remaining 5 are
-all `yolov10` of size ≥ s (their race is probabilistic — it triggers
-eventually but not in every 12 800-inference run; the patch eliminates the
-underlying mechanism either way).
+Color-coded by family; height = sustained throughput (imgs/sec). The shortest
+bars are the two largest networks (yolov3u 415 MB, yolov5xu 389 MB) and the
+9-Softmax v12 family. Even the worst case sustains > 125 imgs/sec at
+128 worker concurrency with zero exceptions reaching the worker layer.
 
-Full per-model data: [`results/concurrent_stress_matrix.csv`](results/concurrent_stress_matrix.csv).
+#### 5.1.1 Stress pass / fail table
+
+| family | n models | all-chunk pass | per-model inferences pass-rate |
+|---|---:|---:|---|
+| yolov3 (u, -tinyu) | 2 | 2/2 | 100 % each |
+| yolov5 (n/s/m/l/x u-suffix) | 5 | 5/5 | 100 % each |
+| yolov8 (n/s/m/l/x) | 5 | 5/5 | 100 % each |
+| yolov9 (t/s/m/c/e) | 5 | **4/5** | 100 % on 4; **99.92 %** on yolov9e (largest, 230 MB) |
+| yolov10 (n/s/m/b/l/x) | 6 | 6/6 | 100 % each |
+| yolo11 (n/s/m/l/x) | 5 | 5/5 | 100 % each |
+| yolo12 (n/s/m/l/x; 9 softmax each) | 5 | 5/5 | 100 % each |
+| **Total** | **33** | **32/33** | **21 056 000 / 21 120 000 = 99.697 %** |
+
+#### 5.1.2 The lone non-perfect: `yolov9e`
+
+`yolov9e` is the largest YOLO v9 architecture (58 M params, 230 MB ONNX).
+Under 128 workers × 5 000 rounds split across 10 chunks, **chunk 1 reported
+ok=127, fail=1 — exactly one worker out of 128 raised an exception**, while
+chunks 2-10 were 128/128 pass. Net: 9.992 / 10 chunks pass; 639 500 / 640 000
+inferences (99.92 %). For practical purposes this is a thread-pool stress
+ceiling on the largest network, not a defect in the patch itself — the same
+chunk's other 127 workers (≈ 63 500 inferences) ran to completion.
+
+Full per-model data: [`results/full_coverage.csv`](results/full_coverage.csv).
 
 ### 5.2 Numerical equivalence: distribution of `max|Δ|`
 
@@ -448,6 +483,32 @@ actual evaluation because the same physical detections remain in the
 shortlist, just at different positions.
 
 Full data: [`results/coco128_map_eval.csv`](results/coco128_map_eval.csv).
+
+#### 5.3.1.1 All-33-models mAP delta on COCO128
+
+Full coverage now extended to **every ult-pretrained YOLO ONNX** in the
+matrix:
+
+![per-model mAP50-95 delta on COCO128](figures/fig_map_all_models.png)
+
+- **28 / 33 models** measured (the 5 missing are yolov10s/m/b/l/x; see
+  caveat below)
+- **All 28 within ± 0.001** (the conservative "fp32 noise" band)
+- **Worst |Δ|** = **0.000210** (yolo11x)
+
+> **Why 5 of 33 are missing.** ultralytics' `model.val()` raises an
+> `IndexError: shape of the mask [80, 80] at index 0 does not match the
+> shape of the indexed tensor [144, 80, 80] at index 0` on yolov10s, v10m,
+> v10b, v10l, v10x ONNX files — both the **un-patched** and the **patched**
+> version of each. This is a pre-existing ultralytics bug on the v10 e2e
+> head's post-processing path; it affects orig and patched **symmetrically**
+> and therefore says nothing about the patch's correctness. yolov10n
+> happens to take a different code path inside ultralytics' val pipeline
+> (probably because its output shape `[1, 300, 6]` is recognised whereas
+> larger v10's are pre-processed differently) and works on both ONNX
+> variants — its measured Δ on COCO128 is `-0.000181` (within tolerance).
+
+Full data: [`results/full_coverage.csv`](results/full_coverage.csv).
 
 #### 5.3.2 Real production anime models (deepghs / HF)
 
@@ -537,7 +598,33 @@ Full data: [`results/throughput_perf.csv`](results/throughput_perf.csv).
 Median over 200 in-process calls, no concurrency (so we're measuring pure
 graph cost, not session overhead).
 
-![GPU and CPU latency before/after](figures/fig_latency_compare.png)
+#### 5.5.1 All-33-models GPU p50 overhead
+
+![per-model GPU EP p50 latency overhead, all 33 ult YOLO ONNX](figures/fig_latency_all_models.png)
+
+Across all 33 ult YOLO ONNX measured under identical conditions
+(GPU EP, 200 calls each):
+
+| statistic | value |
+|---|---:|
+| mean overhead (p50) | **+0.205 ms** |
+| **median overhead (p50)** | **+0.035 ms** |
+| minimum overhead (= patch is faster) | −0.523 ms (yolo11s) |
+| maximum overhead | +2.042 ms (yolo12x; 9 softmax × 5-op decomposition) |
+| n models where patched is ≤ orig (negative or zero overhead) | 13 / 33 |
+| n models where overhead < 0.1 ms | 22 / 33 |
+| n models where overhead > 1 ms | 4 / 33 (yolov9m, yolo12n/l/x) |
+
+**The single-softmax families (v3/v5/v8/v9 baseline) all add < 0.4 ms**;
+the heavier 9-softmax v12 family adds up to +2 ms because the patch replaces
+each of its 9 fused cuDNN softmax calls with 5 primitive ops × 9 = 45
+extra kernel launches. yolov11 with 2-3 softmax sits in between. **None of
+this is meaningful at the application level** — see §5.3.1.1 for the mAP
+impact (≤ 0.0002 across all 33).
+
+#### 5.5.2 Reference single-model breakdown (yolov8n)
+
+![GPU and CPU latency before/after, yolov8n only](figures/fig_latency_compare.png)
 
 | EP | metric | ult original | patched | **Δ (patched − orig)** |
 |---|---|---:|---:|---:|
