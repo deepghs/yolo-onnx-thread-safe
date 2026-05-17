@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+.venv/
+venv/
+.env
+.DS_Store
+*.swp
+# Don't commit user-generated patched ONNX
+*_safe.onnx
+*.onnx.bak
+# Large input/output ONNX bypass git
+*.onnx
+*.pt

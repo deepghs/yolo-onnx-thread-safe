@@ -1,0 +1,25 @@
+{
+  "model": "yolov8n",
+  "ep": "CPUExecutionProvider",
+  "intra_op_threads": 1,
+  "n_imgs": 12,
+  "numerical_equivalence": {
+    "worst_max_abs": 1.831e-04,
+    "worst_mean_abs": 2.318e-07,
+    "comment": "fp32 noise band; original (cuDNN-free path) vs patched (manual softmax)"
+  },
+  "single_thread_latency_ms": {
+    "ult_original": {"mean": 73.78, "p50": 71.70, "p95": 84.37},
+    "patched":      {"mean": 67.85, "p50": 65.62, "p95": 88.14},
+    "patched_minus_orig_p50_ms": -6.08,
+    "comment": "Patched is 6 ms FASTER on CPU (manual softmax's 5 simple ops use better-optimized SIMD paths than the generic native Softmax kernel)."
+  },
+  "concurrent_stress": {
+    "workers": 4,
+    "rounds_per_worker": 50,
+    "total_inferences": 200,
+    "ok_workers": 4,
+    "fail_workers": 0,
+    "comment": "CPU EP has no cuDNN race; this just confirms patched is functional on CPU."
+  }
+}

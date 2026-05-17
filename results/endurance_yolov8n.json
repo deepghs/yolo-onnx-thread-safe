@@ -1,0 +1,49 @@
+{
+  "model": "yolov8n_safe (patched)",
+  "softmax_replaced": 1,
+  "config": {
+    "workers": 128,
+    "chunks": 10,
+    "rounds_per_worker_per_chunk": 500,
+    "inferences_per_chunk": 64000,
+    "total_inferences": 640000,
+    "ep": "CUDAExecutionProvider"
+  },
+  "result": {
+    "chunks_succeeded": 10,
+    "chunks_failed": 0,
+    "total_inferences_succeeded": 640000,
+    "wall_elapsed_s": 927.5,
+    "overall_throughput_imgs_per_sec": 690.0,
+    "per_chunk_throughput_imgs_per_sec_avg": 744.0,
+    "correctness_check_per_chunk": [
+      {"chunk": 1, "elapsed_s": 93.62, "worst_abs_diff_vs_ult_orig": 0.0001220703125},
+      {"chunk": 2, "elapsed_s": 90.41, "worst_abs_diff_vs_ult_orig": 0.0001220703125},
+      {"chunk": 3, "elapsed_s": 92.24, "worst_abs_diff_vs_ult_orig": 0.0001220703125},
+      {"chunk": 4, "elapsed_s": 99.83, "worst_abs_diff_vs_ult_orig": 0.0001220703125},
+      {"chunk": 5, "elapsed_s": 88.91, "worst_abs_diff_vs_ult_orig": 0.0001220703125},
+      {"chunk": 6, "elapsed_s": 84.92, "worst_abs_diff_vs_ult_orig": 0.0001220703125},
+      {"chunk": 7, "elapsed_s": 82.98, "worst_abs_diff_vs_ult_orig": 0.0001220703125},
+      {"chunk": 8, "elapsed_s": 86.66, "worst_abs_diff_vs_ult_orig": 0.0001220703125},
+      {"chunk": 9, "elapsed_s": 86.50, "worst_abs_diff_vs_ult_orig": 0.0001220703125},
+      {"chunk": 10, "elapsed_s": 81.67, "worst_abs_diff_vs_ult_orig": 0.0001220703125}
+    ],
+    "control_on_unpatched_original": {
+      "config": "128 workers x 500 rounds same load",
+      "ok_workers": 0,
+      "fail_workers": 128,
+      "elapsed_s": 300,
+      "timeout": true,
+      "status": "race_triggered_hung",
+      "expected": "yes"
+    }
+  },
+  "hardware": "NVIDIA H200 144 GB",
+  "software": {
+    "onnxruntime_gpu": "1.23.2",
+    "ultralytics": "8.3.105",
+    "python": "3.10.20",
+    "torch": "2.12.0+cu130"
+  },
+  "comment": "Worst |delta| stayed constant at 1.221e-4 across all 10 chunks: zero drift over 640k inferences."
+}
